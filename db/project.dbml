@@ -1,0 +1,246 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+// ===========================================
+// 0. LOOKUP & CONFIGURATION TABLES
+// ===========================================
+
+// 0A. PROJECT ROLES
+Table project_roles {
+  id integer [pk]
+  name varchar [unique, not null] // PO, SM, DEVELOPER, QA
+  description text
+}
+
+// 0B. ISSUE TYPES
+Table issue_types {
+  id integer [pk]
+  name varchar [unique, not null] // Epic, Story, Task, Bug, Sub-task
+  icon_url varchar
+  is_subtask boolean [default: false]
+}
+
+// 0C. WORKFLOW STATUSES (Kho trạng thái)
+Table workflow_statuses {
+  id integer [pk]
+  name varchar [not null] // To Do, In Progress, Review, Done
+  status_category varchar // TO_DO, IN_PROGRESS, DONE
+  color_code varchar
+}
+
+// ===========================================
+// 1. WORKFLOW ENGINE
+// ===========================================
+
+// 1A. WORKFLOWS
+Table workflows {
+  id integer [pk]
+  name varchar [unique, not null] // "Software Dev", "Simple Task"
+  description text
+}
+
+// 1B. WORKFLOW STEPS (Định nghĩa CỘT trên Board) -> ĐÃ THÊM LẠI
+Table workflow_steps {
+  id integer [pk]
+  workflow_id integer [not null]
+  status_id integer [not null]
+  step_order integer [not null] // 1, 2, 3...
+
+  indexes {
+    (workflow_id, status_id) [unique]
+  }
+}
+
+// 1C. STATUS TRANSITIONS (Luật di chuyển)
+Table status_transitions {
+  id integer [pk]
+  workflow_id integer [not null]
+  from_status_id integer [not null]
+  to_status_id integer [not null]
+  
+  indexes {
+    (workflow_id, from_status_id, to_status_id) [unique]
+  }
+}
+
+// ===========================================
+// 2. CORE ENTITIES
+// ===========================================
+
+// 2A. USERS
+Table users {
+  id integer [pk]
+  email varchar [unique, not null]
+  password_hash varchar [not null]
+  full_name varchar
+  avatar_url varchar
+  is_superuser boolean [default: false] // Admin hệ thống
+  status varchar [default: 'ACTIVE']
+  created_at timestamp
+}
+
+// 2B. PROJECTS
+Table projects {
+  id integer [pk]
+  name varchar [not null]
+  code varchar [unique]
+  description text
+  owner_id integer [not null]
+  workflow_id integer [not null]
+  
+  start_date date
+  end_date date
+  status varchar 
+  created_at timestamp
+}
+
+// 2C. SPRINTS
+Table sprints {
+  id integer [pk]
+  project_id integer [not null]
+  name varchar
+  start_date date
+  end_date date
+  status varchar // UPCOMING, ACTIVE, CLOSED
+  created_at timestamp
+}
+
+// 2D. TASKS
+Table tasks {
+  id integer [pk]
+  project_id integer [not null]
+  issue_type_id integer [not null]
+  
+  parent_task_id integer // Self-reference
+  sprint_id integer // Nullable
+  
+  title varchar [not null]
+  description text
+  status_id integer [not null] // Trạng thái động
+  priority varchar // HIGH, MEDIUM, LOW
+  story_points integer
+  
+  start_date date
+  due_date date
+  completed_at timestamp
+  created_at timestamp
+}
+
+// ===========================================
+// 3. JOIN TABLES
+// ===========================================
+
+// 3A. TASK ASSIGNEES
+Table task_assignees {
+  task_id integer [not null]
+  user_id integer [not null]
+  assigned_at timestamp
+
+  indexes {
+    (task_id, user_id) [pk]
+  }
+}
+
+// 3B. LABELS
+Table labels {
+  id integer [pk]
+  name varchar [unique, not null]
+  color varchar
+}
+
+// 3C. TASK LABELS
+Table task_labels {
+  task_id integer [not null]
+  label_id integer [not null]
+
+  indexes {
+    (task_id, label_id) [pk]
+  }
+}
+
+// 3D. PROJECT MEMBERS
+Table project_members {
+  project_id integer [not null]
+  user_id integer [not null]
+  project_role_id integer [not null]
+
+  indexes {
+    (project_id, user_id) [pk]
+  }
+}
+
+// ===========================================
+// 4. TRACKING TABLES
+// ===========================================
+
+// 4A. COMMENTS
+Table comments {
+  id integer [pk]
+  task_id integer [not null]
+  user_id integer [not null]
+  content text [not null]
+  created_at timestamp
+}
+
+// 4B. ACTIVITY LOGS
+Table activity_logs {
+  id integer [pk]
+  task_id integer [not null]
+  user_id integer [not null]
+  action varchar [not null]
+  old_value text
+  new_value text
+  created_at timestamp
+}
+
+// 4C. NOTIFICATIONS
+Table notifications {
+  id integer [pk]
+  user_id integer [not null]
+  task_id integer
+  content text [not null]
+  read boolean [default: false]
+  created_at timestamp
+}
+
+// ===========================================
+// 5. REFERENCES (Sửa lỗi)
+// ===========================================
+
+// Workflow System
+Ref: workflow_steps.workflow_id > workflows.id
+Ref: workflow_steps.status_id > workflow_statuses.id
+Ref: status_transitions.workflow_id > workflows.id
+Ref: status_transitions.from_status_id > workflow_statuses.id
+Ref: status_transitions.to_status_id > workflow_statuses.id
+
+// Links
+Ref: project_members.project_role_id > project_roles.id
+Ref: tasks.issue_type_id > issue_types.id
+Ref: projects.workflow_id > workflows.id
+Ref: tasks.status_id > workflow_statuses.id
+
+// Core
+Ref: projects.owner_id > users.id
+Ref: tasks.project_id > projects.id
+Ref: tasks.parent_task_id > tasks.id
+Ref: tasks.sprint_id > sprints.id
+Ref: sprints.project_id > projects.id
+
+// Joins
+Ref: task_assignees.task_id > tasks.id
+Ref: task_assignees.user_id > users.id
+Ref: task_labels.task_id > tasks.id
+Ref: task_labels.label_id > labels.id
+Ref: project_members.project_id > projects.id
+Ref: project_members.user_id > users.id
+
+// Tracking
+Ref: comments.task_id > tasks.id
+Ref: comments.user_id > users.id
+Ref: activity_logs.task_id > tasks.id
+Ref: activity_logs.user_id > users.id
+
+// FIX LỖI: Trỏ vào tasks.id chứ không phải parent_task_id
+Ref: notifications.user_id > users.id
+Ref: notifications.task_id > tasks.id
