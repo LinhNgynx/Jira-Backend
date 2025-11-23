@@ -1,18 +1,17 @@
 package com.taskmanager.backend.security;
 
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import io.jsonwebtoken.JwtException; // Thêm import này cho JwtException
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.Authentication; // Thêm import này để dùng Authentication
-import org.springframework.security.core.userdetails.UserDetails; // Thêm import này
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
-import org.springframework.security.core.userdetails.User; // Dùng cho ví dụ Authentication
 
 @Component
 public class JwtUtils {
@@ -23,49 +22,54 @@ public class JwtUtils {
     @Value("${jwt.expiration-ms:3600000}")
     private long jwtExpirationMs;
 
-    private Key getSigningKey() {
+    // Helper: Tạo SecretKey chuẩn
+    private SecretKey getSigningKey() {
         String secret = jwtSecret == null ? "" : jwtSecret.trim();
         byte[] keyBytes;
         try {
-            // Try decode as Base64 (recommended)
+            // Ưu tiên giải mã Base64 (nếu key được cấu hình dạng Base64)
             keyBytes = Base64.getDecoder().decode(secret);
         } catch (IllegalArgumentException ex) {
-            // Not Base64; use raw UTF-8 bytes
+            // Nếu không phải Base64, dùng byte thuần của chuỗi
             keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         }
-        // Keys.hmacShaKeyFor validates key length and builds SecretKey
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    // SỬA: Dùng đối tượng Authentication chuẩn để lấy username
+    // 1. Tạo Token
     public String generateToken(Authentication authentication) {
-        // Lấy thông tin UserDetails từ Authentication
         UserDetails userPrincipal = (UserDetails) authentication.getPrincipal();
-
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtExpirationMs);
-        
-        // SỬA: Chuyển từ setSubject, setIssuedAt, setExpiration sang cú pháp ngắn gọn
+
         return Jwts.builder()
-                .subject(userPrincipal.getUsername()) // FIX DEPRECATION
-                .issuedAt(now) // FIX DEPRECATION
-                .expiration(expiry) // FIX DEPRECATION
-                .signWith(getSigningKey()) // Cập nhật: Không cần chỉ định SignatureAlgorithm nếu dùng Keys.hmacShaKeyFor
+                .subject(userPrincipal.getUsername())
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(getSigningKey()) // JJWT tự động chọn thuật toán dựa trên độ dài key
                 .compact();
     }
 
-    // SỬA: getUsernameFromToken phải dùng interface ClaimsJws, không phải Jws (cũ)
+    // 2. Lấy Username từ Token (Sửa lại theo chuẩn 0.12.x)
     public String getUsernameFromToken(String token) {
-        return Jwts.parserBuilder().setSigningKey(getSigningKey()).build()
-                .parseClaimsJws(token).getBody().getSubject();
+        return Jwts.parser()
+                .verifyWith(getSigningKey()) // Dùng verifyWith thay cho setSigningKey
+                .build()
+                .parseSignedClaims(token)    // Dùng parseSignedClaims thay cho parseClaimsJws
+                .getPayload()                // Dùng getPayload thay cho getBody
+                .getSubject();
     }
 
+    // 3. Kiểm tra Token hợp lệ (Sửa lại theo chuẩn 0.12.x)
     public boolean validate(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
+            Jwts.parser()
+                .verifyWith(getSigningKey()) // Dùng verifyWith
+                .build()
+                .parseSignedClaims(token);   // Parse thử, nếu lỗi sẽ ném Exception
             return true;
         } catch (JwtException | IllegalArgumentException ex) {
-            // Log lỗi nếu cần
+            // Token hết hạn, sai chữ ký, hoặc cấu trúc hỏng
             return false;
         }
     }
