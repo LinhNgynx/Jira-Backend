@@ -10,7 +10,8 @@ import java.time.LocalDateTime;
         @UniqueConstraint(columnNames = {"task_id", "user_id"})
     }
 )
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,19 +20,15 @@ public class TaskAssignee {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "task_id", nullable = false)
     private Task task;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @org.hibernate.annotations.CreationTimestamp
     @Column(name = "assigned_at")
     private LocalDateTime assignedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        this.assignedAt = LocalDateTime.now();
-    }
 }

@@ -5,7 +5,8 @@ import lombok.*;
 
 @Entity
 @Table(name = "issue_types")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -20,6 +21,7 @@ public class IssueType {
     @Column(name = "icon_url")
     private String iconUrl;
 
+    @Builder.Default
     @Column(name = "is_subtask")
     private Boolean isSubtask = false;
 }

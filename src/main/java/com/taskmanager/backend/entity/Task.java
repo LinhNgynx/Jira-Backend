@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "tasks")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -22,7 +23,8 @@ public class Task {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    private String priority; // HIGH, MEDIUM, LOW
+    @Enumerated(EnumType.STRING)
+    private com.taskmanager.backend.enums.TaskPriority priority; // HIGH, MEDIUM, LOW
     
     @Column(name = "story_points")
     private Integer storyPoints;
@@ -33,11 +35,11 @@ public class Task {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "issue_type_id", nullable = false)
     private IssueType issueType;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "status_id", nullable = false)
     private WorkflowStatus status;
 
@@ -56,11 +58,7 @@ public class Task {
     private LocalDate dueDate;
     private LocalDateTime completedAt;
     
+    @org.hibernate.annotations.CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
 }

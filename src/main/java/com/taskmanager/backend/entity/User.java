@@ -6,7 +6,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -31,11 +32,12 @@ public class User {
     @Column(name = "is_superuser")
     private Boolean isSuperuser = false;
 
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "status", nullable = false)
+    private com.taskmanager.backend.enums.UserStatus status = com.taskmanager.backend.enums.UserStatus.ACTIVE;
+
+    @org.hibernate.annotations.CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
 }

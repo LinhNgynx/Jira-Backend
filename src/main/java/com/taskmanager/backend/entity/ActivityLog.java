@@ -6,7 +6,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "activity_logs")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,12 +20,13 @@ public class ActivityLog {
     @JoinColumn(name = "task_id", nullable = false)
     private Task task;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user; // Người thực hiện hành động
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String action; // STATUS_CHANGE, UPDATE_TITLE...
+    private com.taskmanager.backend.enums.ActivityAction action; // STATUS_CHANGE, UPDATE_TITLE...
 
     @Column(name = "old_value", columnDefinition = "TEXT")
     private String oldValue;
@@ -32,11 +34,7 @@ public class ActivityLog {
     @Column(name = "new_value", columnDefinition = "TEXT")
     private String newValue;
 
+    @org.hibernate.annotations.CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
 }

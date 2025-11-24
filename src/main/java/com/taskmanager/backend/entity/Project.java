@@ -2,12 +2,17 @@ package com.taskmanager.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import com.taskmanager.backend.enums.ProjectStatus; // Nhớ tạo Enum này
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "projects")
-@Data
+@Getter // ✅ 1. Bỏ @Data, dùng Getter/Setter để tránh StackOverflow
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,19 +24,22 @@ public class Project {
     @Column(nullable = false)
     private String name;
 
+    // ✅ 2. Code dự án nên viết hoa (VD: "JIRA", "BE") và unique
     @Column(unique = true, nullable = false, length = 10)
-    private String code; // Ví dụ: "PRJ1"
+    private String code; 
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
     // --- MỐI QUAN HỆ (RELATIONSHIPS) ---
     
-    @ManyToOne // Một Project chỉ có một Owner
+    // ✅ 3. QUAN TRỌNG: Luôn dùng LAZY cho owner
+    @ManyToOne(fetch = FetchType.LAZY, optional = false) 
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
 
-    @ManyToOne // Một Project chỉ chạy một Workflow
+    // ✅ 3. QUAN TRỌNG: Luôn dùng LAZY cho workflow
+    @ManyToOne(fetch = FetchType.LAZY, optional = false) 
     @JoinColumn(name = "workflow_id", nullable = false)
     private Workflow workflow;
 
@@ -40,13 +48,17 @@ public class Project {
     private LocalDate startDate;
     private LocalDate endDate;
     
-    private String status; // ACTIVE, ARCHIVED
+    // ✅ 4. Dùng Enum quản lý trạng thái
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ProjectStatus status; 
 
+    // ✅ 5. Tự động quản lý ngày tạo/ngày sửa
+    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }
