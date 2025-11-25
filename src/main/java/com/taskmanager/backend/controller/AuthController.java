@@ -3,13 +3,17 @@ package com.taskmanager.backend.controller;
 import com.taskmanager.backend.dto.AuthResponse;
 import com.taskmanager.backend.dto.LoginRequest;
 import com.taskmanager.backend.dto.RegisterRequest;
+import com.taskmanager.backend.dto.UserProfileDto;
 import com.taskmanager.backend.entity.User;
+import com.taskmanager.backend.repository.UserRepository;
 import com.taskmanager.backend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -21,6 +25,9 @@ public class AuthController {
 
     @Autowired
     private AuthService authService;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // 1. API ĐĂNG KÝ
     @PostMapping("/register")
@@ -51,5 +58,34 @@ public class AuthController {
             error.put("error", "Email hoặc mật khẩu không chính xác");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
         }
+    }
+
+    // 3. API LẤY PROFILE CỦA USER HIỆN TẠI
+    @GetMapping("/users/me")
+    public ResponseEntity<UserProfileDto> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new IllegalArgumentException("User not authenticated");
+        }
+        
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        
+        // Lấy danh sách roles từ ProjectMembers
+        java.util.List<String> roles = user.getProjectMembers().stream()
+                .map(pm -> pm.getRole().getName().toString())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+        
+        UserProfileDto profileDto = UserProfileDto.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .roles(roles)
+                .build();
+        
+        return ResponseEntity.ok(profileDto);
     }
 }

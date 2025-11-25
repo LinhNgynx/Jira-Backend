@@ -3,6 +3,7 @@ package com.taskmanager.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -40,4 +41,8 @@ public class User {
     @org.hibernate.annotations.CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    // ✅ Quan hệ OneToMany với ProjectMember
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<ProjectMember> projectMembers;
 }
