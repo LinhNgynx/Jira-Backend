@@ -1,51 +1,48 @@
 package com.taskmanager.backend.security;
 
+import com.taskmanager.backend.service.UserDetailsServiceImpl;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor; // ✅ Import cái này
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.taskmanager.backend.service.UserDetailsServiceImpl;
 
 import java.io.IOException;
 
 @Component
+@RequiredArgsConstructor // ✅ Tự động inject dependency, không cần @Autowired
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    @Autowired
-    private JwtUtils jwtUtils;
-
-    @Autowired
-    private UserDetailsServiceImpl userDetailsService;
+    private final JwtUtils jwtUtils; // ✅ Thêm final
+    private final UserDetailsServiceImpl userDetailsService; // ✅ Thêm final
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, 
-                                    HttpServletResponse response, 
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         
-        // ✅ THÊM ĐOẠN NÀY - Bỏ qua filter cho các endpoint công khai
-        String path = request.getRequestURI();
-        if (path.startsWith("/api/auth/")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        // --- ĐÃ XÓA ĐOẠN IF CHECK PATH ---
 
         try {
             String jwt = parseJwt(request);
+            // Nếu có token và token hợp lệ
             if (jwt != null && jwtUtils.validateToken(jwt)) {
                 String email = jwtUtils.getEmailFromToken(jwt);
+                
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
                 
-                UsernamePasswordAuthenticationToken authentication = 
-                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                // Lưu user vào Context (Quan trọng nhất)
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (Exception e) {

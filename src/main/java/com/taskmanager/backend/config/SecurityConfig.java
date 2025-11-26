@@ -1,23 +1,23 @@
 package com.taskmanager.backend.config;
 
+import com.taskmanager.backend.security.JwtAuthenticationFilter; // ✅ Import đúng class của mình
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity; // Nên có
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
+@EnableWebSecurity // ✅ Thêm cái này cho chuẩn
 public class SecurityConfig {
-
-    // ❌ XÓA các @Autowired
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -29,10 +29,9 @@ public class SecurityConfig {
         return authConfig.getAuthenticationManager();
     }
 
-    // ✅ Inject qua tham số
     @Bean
     public DaoAuthenticationProvider authenticationProvider(
-            UserDetailsService userDetailsService,  // Spring tự động inject
+            UserDetailsService userDetailsService,
             PasswordEncoder passwordEncoder) {
         
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
@@ -41,23 +40,25 @@ public class SecurityConfig {
         return authProvider;
     }
 
-    // ✅ Inject qua tham số
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            OncePerRequestFilter jwtAuthenticationFilter,  // Spring tự động inject
+            JwtAuthenticationFilter jwtAuthenticationFilter, // ✅ Gọi đích danh class Filter của mình
             DaoAuthenticationProvider authenticationProvider) throws Exception {
         
         http
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> 
-                    session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // ✅ Chỉ cho phép Register và Login là public
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        // ⛔ Các API khác (bao gồm /api/auth/users/me) BẮT BUỘC phải có Token
                         .anyRequest().authenticated()
                 );
 
         http.authenticationProvider(authenticationProvider);
+        
+        // Thêm Filter của mình trước Filter mặc định
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
