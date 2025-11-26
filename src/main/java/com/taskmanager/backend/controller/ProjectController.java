@@ -1,0 +1,24 @@
+package com.taskmanager.backend.controller;
+
+import com.taskmanager.backend.dto.CreateProjectRequest;
+import com.taskmanager.backend.dto.ProjectResponse;
+import com.taskmanager.backend.service.ProjectService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/projects")
+@RequiredArgsConstructor
+public class ProjectController {
+
+    private final ProjectService projectService;
+
+    @PostMapping
+    public ResponseEntity<ProjectResponse> createProject(@Valid @RequestBody CreateProjectRequest request) {
+        ProjectResponse response = projectService.createProject(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+}
