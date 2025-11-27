@@ -18,16 +18,18 @@ public class CreateTaskRequest {
     private String description;
 
     @NotNull(message = "Loại task (Issue Type) không được để trống")
-    private Integer issueTypeId; // ID của Bug, Story...
+    private Integer issueTypeId; // 1=Epic, 2=Story...
 
     private TaskPriority priority; // HIGH, MEDIUM, LOW
+    
+    private Integer storyPoints;   // Điểm (1, 2, 3, 5...)
 
     private LocalDate startDate;
     private LocalDate dueDate;
     
-    // Danh sách ID người được giao việc (Vì TaskAssignee là OneToMany)
+    // Danh sách người làm (VD: [1, 5])
     private List<Integer> assigneeIds; 
     
-    // Nếu tạo Subtask (để sau, giờ cứ để null)
-    private Integer parentTaskId; 
+    private Integer sprintId;     // Nếu muốn tạo xong nhét luôn vào Sprint
+    private Integer parentTaskId; // Nếu tạo Subtask thì phải gửi ID cha
 }

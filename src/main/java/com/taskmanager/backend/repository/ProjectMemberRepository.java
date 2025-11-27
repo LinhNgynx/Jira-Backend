@@ -7,4 +7,5 @@ import java.util.Optional;
 
 @Repository
 public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Integer> {
+    boolean existsByProjectIdAndUserId(Integer projectId, Integer userId);
 }

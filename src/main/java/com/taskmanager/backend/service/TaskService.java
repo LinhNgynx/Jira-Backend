@@ -2,6 +2,8 @@ package com.taskmanager.backend.service;
 
 import com.taskmanager.backend.dto.CreateTaskRequest;
 import com.taskmanager.backend.entity.*;
+import com.taskmanager.backend.enums.IssueLevel;
+import com.taskmanager.backend.enums.RoleType;
 import com.taskmanager.backend.enums.TaskPriority;
 import com.taskmanager.backend.repository.*;
 import com.taskmanager.backend.utils.UserUtils;
@@ -19,8 +21,10 @@ public class TaskService {
     private final ProjectRepository projectRepo;
     private final IssueTypeRepository issueTypeRepo;
     private final WorkflowStepRepository stepRepo;
-    private final UserRepository userRepo;
+    private final SprintRepository sprintRepo;
     private final TaskAssigneeRepository assigneeRepo;
+    private final ProjectMemberRepository memberRepo; // Dùng để check member tồn tại
+    private final UserRepository userRepo;
     private final UserUtils userUtils;
 
     @Transactional
@@ -29,50 +33,80 @@ public class TaskService {
 
         // 1. Tìm Project
         Project project = projectRepo.findById(request.getProjectId())
-                .orElseThrow(() -> new RuntimeException("Project not found"));
+                .orElseThrow(() -> new RuntimeException("Dự án không tồn tại (Project not found)"));
 
-        // 2. CHECK QUYỀN: User phải là thành viên dự án
-        boolean isMember = project.getProjectMembers().stream()
-                .anyMatch(m -> m.getUser().getId().equals(currentUser.getId()));
-        if (!isMember) {
-            throw new RuntimeException("Bạn không phải thành viên dự án này!");
+        // 2. CHECK QUYỀN: Người tạo phải là thành viên & KHÔNG được là VIEWER
+        ProjectMember currentMember = project.getProjectMembers().stream()
+                .filter(m -> m.getUser().getId().equals(currentUser.getId()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên dự án này!"));
+
+        if (currentMember.getRole().getName() == RoleType.VIEWER) {
+            throw new RuntimeException("Bạn chỉ có quyền Xem (Viewer), không được phép tạo Task!");
         }
 
-        // 3. Tìm Issue Type
+        // 3. Tìm Issue Type (Loại task)
         IssueType issueType = issueTypeRepo.findById(request.getIssueTypeId())
-                .orElseThrow(() -> new RuntimeException("Issue Type not found"));
+                .orElseThrow(() -> new RuntimeException("Loại Task (Issue Type) không tồn tại"));
 
-        // 4. LOGIC TỰ ĐỘNG STATUS: Luôn lấy bước 1 (To Do)
+        // 4. Xử lý Cha Con (Hierarchy) & Validate
+        Task parentTask = null;
+        if (request.getParentTaskId() != null) {
+            parentTask = taskRepo.findById(request.getParentTaskId())
+                    .orElseThrow(() -> new RuntimeException("Task cha (Parent Task) không tồn tại"));
+        }
+        // Gọi hàm validate logic gia phả
+        validateTaskHierarchy(issueType, parentTask);
+
+        // 5. Tìm Sprint (Nếu có)
+        Sprint sprint = null;
+        if (request.getSprintId() != null) {
+            sprint = sprintRepo.findById(request.getSprintId())
+                    .orElseThrow(() -> new RuntimeException("Sprint không tồn tại"));
+            
+            // Check kỹ: Sprint này có thuộc Project này không?
+            if (!sprint.getProject().getId().equals(project.getId())) {
+                throw new RuntimeException("Sprint không thuộc dự án này!");
+            }
+        }
+
+        // 6. Tự động tìm Status khởi đầu (To Do)
+        // Tìm bước 1 (stepOrder = 1) của Workflow dự án
         WorkflowStep startStep = stepRepo.findByWorkflowIdAndStepOrder(project.getWorkflow().getId(), 1)
-                .orElseThrow(() -> new RuntimeException("Workflow lỗi: Chưa cấu hình bước 1"));
-        WorkflowStatus initialStatus = startStep.getStatus();
+                .orElseThrow(() -> new RuntimeException("Lỗi cấu hình Workflow: Chưa có bước khởi đầu (Step 1)"));
 
-        // 5. LOGIC TỰ ĐỘNG TASK INDEX:
-        // Lấy max hiện tại + 1. Ví dụ max là 10 thì cái này là 11.
+        // 7. Tự động tính Task Index (Max + 1) -> Để ra key JIRA-1, JIRA-2
         Integer nextIndex = taskRepo.getMaxTaskIndex(project.getId()) + 1;
 
-        // 6. Tạo Task Entity
+        // 8. Build & Save Task
         Task task = Task.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .project(project)
                 .issueType(issueType)
-                .status(initialStatus) // Tự gán To Do
-                .taskIndex(nextIndex)  // Tự gán Index (VD: 1, 2, 3)
+                .status(startStep.getStatus()) // Auto Status: To Do
+                .taskIndex(nextIndex)          // Auto Index: 1, 2, 3...
                 .priority(request.getPriority() != null ? request.getPriority() : TaskPriority.MEDIUM)
+                .storyPoints(request.getStoryPoints())
                 .startDate(request.getStartDate())
                 .dueDate(request.getDueDate())
+                .sprint(sprint)         // Gán sprint (hoặc null)
+                .parentTask(parentTask) // Gán cha (hoặc null)
                 .build();
 
         Task savedTask = taskRepo.save(task);
 
-        // 7. Xử lý Assignees (Giao việc)
+        // 9. Lưu Assignees (Người thực hiện) & Validate từng người
         if (request.getAssigneeIds() != null && !request.getAssigneeIds().isEmpty()) {
             List<User> assignees = userRepo.findAllById(request.getAssigneeIds());
             
-            // Validate: Tất cả người được giao phải thuộc dự án (Optional - Làm kỹ thì thêm vào)
-            
             for (User user : assignees) {
+                // Check: Người được giao có thuộc dự án không?
+                boolean isProjectMember = memberRepo.existsByProjectIdAndUserId(project.getId(), user.getId());
+                if (!isProjectMember) {
+                    throw new RuntimeException("Lỗi: User " + user.getEmail() + " không thuộc dự án này, không thể giao việc!");
+                }
+
                 TaskAssignee assignment = TaskAssignee.builder()
                         .task(savedTask)
                         .user(user)
@@ -82,5 +116,33 @@ public class TaskService {
         }
 
         return savedTask;
+    }
+
+    // --- HÀM PHỤ: Validate Logic Gia Phả (Cha Con) ---
+    private void validateTaskHierarchy(IssueType currentType, Task parentTask) {
+        // LEVEL 0: EPIC -> Không được có cha
+        if (currentType.getLevel() == IssueLevel.EPIC) {
+            if (parentTask != null) throw new RuntimeException("Lỗi: Epic không được phép có cha!");
+            return;
+        }
+
+        // LEVEL 2: SUBTASK -> Bắt buộc có cha là Standard
+        if (currentType.getLevel() == IssueLevel.SUBTASK) {
+            if (parentTask == null) throw new RuntimeException("Lỗi: Subtask bắt buộc phải có cha!");
+            
+            if (parentTask.getIssueType().getLevel() != IssueLevel.STANDARD) {
+                throw new RuntimeException("Lỗi: Cha của Subtask phải là Story, Task hoặc Bug!");
+            }
+            return;
+        }
+
+        // LEVEL 1: STANDARD (Story/Task/Bug) -> Cha (nếu có) phải là Epic
+        if (currentType.getLevel() == IssueLevel.STANDARD) {
+            if (parentTask != null) {
+                if (parentTask.getIssueType().getLevel() != IssueLevel.EPIC) {
+                    throw new RuntimeException("Lỗi: Task thường chỉ được phép thuộc về Epic (hoặc không có cha)!");
+                }
+            }
+        }
     }
 }

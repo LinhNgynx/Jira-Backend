@@ -21,7 +21,7 @@ public class IssueType {
     @Column(name = "icon_url")
     private String iconUrl;
 
-    @Builder.Default
-    @Column(name = "is_subtask")
-    private Boolean isSubtask = false;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "hierarchy_level", nullable = false)
+    private com.taskmanager.backend.enums.IssueLevel level;
 }
