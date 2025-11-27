@@ -1,6 +1,8 @@
 package com.taskmanager.backend.controller;
 
+import com.taskmanager.backend.dto.BacklogResponse;
 import com.taskmanager.backend.dto.CreateProjectRequest;
+import com.taskmanager.backend.dto.ProjectDetailResponse;
 import com.taskmanager.backend.dto.ProjectResponse;
 import com.taskmanager.backend.service.ProjectService;
 import jakarta.validation.Valid;
@@ -26,5 +28,13 @@ public class ProjectController {
     @GetMapping
     public ResponseEntity<List<ProjectListResponse>> getMyProjects() {
         return ResponseEntity.ok(projectService.getMyProjects());
+    }
+    @GetMapping("/{id}")
+    public ResponseEntity<ProjectDetailResponse> getProjectDetail(@PathVariable Integer id) {
+        return ResponseEntity.ok(projectService.getProjectDetail(id));
+    }
+    @GetMapping("/{id}/backlog")
+    public ResponseEntity<BacklogResponse> getBacklog(@PathVariable Integer id) {
+        return ResponseEntity.ok(projectService.getBacklogData(id));
     }
 }

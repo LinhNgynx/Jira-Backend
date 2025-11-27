@@ -17,6 +17,12 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @Column(name = "task_index", nullable = false)
+    private Integer taskIndex;
+
+    @OneToMany(mappedBy = "task", fetch = FetchType.LAZY)
+    private java.util.List<TaskAssignee> assignees;
+    
     @Column(nullable = false)
     private String title;
 
@@ -25,12 +31,12 @@ public class Task {
 
     @Enumerated(EnumType.STRING)
     private com.taskmanager.backend.enums.TaskPriority priority; // HIGH, MEDIUM, LOW
-    
+
     @Column(name = "story_points")
     private Integer storyPoints;
 
     // --- MỐI QUAN HỆ (FOREIGN KEYS) ---
-    
+
     @ManyToOne(fetch = FetchType.LAZY) // Lazy: Khi lấy Task không tự lấy Project ngay (để nhẹ)
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
@@ -57,7 +63,7 @@ public class Task {
     private LocalDate startDate;
     private LocalDate dueDate;
     private LocalDateTime completedAt;
-    
+
     @org.hibernate.annotations.CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

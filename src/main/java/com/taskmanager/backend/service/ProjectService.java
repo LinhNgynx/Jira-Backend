@@ -1,13 +1,17 @@
 package com.taskmanager.backend.service;
 
+import com.taskmanager.backend.dto.BacklogResponse;
 import com.taskmanager.backend.dto.CreateProjectRequest;
+import com.taskmanager.backend.dto.ProjectDetailResponse;
 import com.taskmanager.backend.dto.ProjectResponse;
 import com.taskmanager.backend.entity.*;
 import com.taskmanager.backend.enums.ProjectStatus;
 import com.taskmanager.backend.enums.RoleType;
+import com.taskmanager.backend.enums.SprintStatus;
 import com.taskmanager.backend.repository.*;
 import com.taskmanager.backend.utils.UserUtils;
 import com.taskmanager.backend.dto.ProjectListResponse;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +27,8 @@ public class ProjectService {
         private final ProjectRoleRepository roleRepo;
         private final WorkflowRepository workflowRepo;
         private final ProjectMemberRepository memberRepo;
+        private final SprintRepository sprintRepo; // ✅ MỚI: Để lấy danh sách Sprint
+        private final TaskRepository taskRepo; // ✅ MỚI: Để lấy danh sách Task
         private final UserRepository userRepo;
         private final UserUtils userUtils;
 
@@ -115,5 +121,139 @@ public class ProjectService {
                                         .myRole(myRole)
                                         .build();
                 }).collect(Collectors.toList());
+        }
+
+        @Transactional(readOnly = true)
+        public ProjectDetailResponse getProjectDetail(Integer projectId) {
+                // 1. Lấy User đang đăng nhập
+                User currentUser = userUtils.getCurrentUser();
+
+                // 2. Tìm dự án
+                Project project = projectRepo.findById(projectId)
+                                .orElseThrow(() -> new RuntimeException("Dự án không tồn tại"));
+
+                // 3. 🛡️ BẢO MẬT: Kiểm tra xem User có phải thành viên không?
+                // Logic: Lọc trong list member xem có ai trùng ID với mình không
+                boolean isMember = project.getProjectMembers().stream()
+                                .anyMatch(pm -> pm.getUser().getId().equals(currentUser.getId()));
+
+                if (!isMember) {
+                        throw new RuntimeException("Truy cập bị từ chối! Bạn không phải thành viên dự án này.");
+                        // Thực tế nên ném custom exception trả về 403 Forbidden
+                }
+
+                // 4. Map danh sách thành viên sang DTO
+                List<ProjectDetailResponse.MemberDto> memberDtos = project.getProjectMembers().stream()
+                                .map(pm -> ProjectDetailResponse.MemberDto.builder()
+                                                .userId(pm.getUser().getId())
+                                                .fullName(pm.getUser().getFullName())
+                                                .email(pm.getUser().getEmail())
+                                                .avatarUrl(pm.getUser().getAvatarUrl())
+                                                .role(pm.getRole().getName().toString())
+                                                .build())
+                                .collect(Collectors.toList());
+
+                // 5. Map Project sang DTO
+                return ProjectDetailResponse.builder()
+                                .id(project.getId())
+                                .name(project.getName())
+                                .code(project.getCode())
+                                .description(project.getDescription())
+                                .status(project.getStatus().toString())
+                                .workflowName(project.getWorkflow().getName())
+                                .owner(ProjectDetailResponse.UserSummaryDto.builder()
+                                                .id(project.getOwner().getId())
+                                                .fullName(project.getOwner().getFullName())
+                                                .email(project.getOwner().getEmail())
+                                                .avatarUrl(project.getOwner().getAvatarUrl())
+                                                .build())
+                                .members(memberDtos)
+                                .createdAt(project.getCreatedAt())
+                                .build();
+        }
+
+        /**
+         * API: Lấy dữ liệu màn hình Backlog (Gồm Sprint Active, Planned và Backlog)
+         * Đã tối ưu code: Tách logic map DTO ra hàm riêng.
+         */
+        @Transactional(readOnly = true)
+        public BacklogResponse getBacklogData(Integer projectId) {
+                // 1. Lấy dữ liệu thô từ DB
+                Project project = projectRepo.findById(projectId)
+                                .orElseThrow(() -> new RuntimeException("Dự án không tồn tại"));
+
+                List<Sprint> sprints = sprintRepo.findActiveAndPlannedSprints(projectId);
+
+                // Lưu ý: taskRepo phải dùng câu @Query JOIN FETCH để tối ưu hiệu năng (tránh
+                // lỗi N+1)
+                List<Task> allTasks = taskRepo.findTasksForBacklog(projectId, SprintStatus.COMPLETED);
+
+                // 2. NHÓM 1: Xử lý các Sprint (Active/Planned)
+                List<BacklogResponse.SprintDto> sprintDtos = sprints.stream().map(sprint -> {
+                        // Lọc task thuộc sprint này
+                        List<Task> tasksInSprint = allTasks.stream()
+                                        .filter(t -> t.getSprint() != null
+                                                        && t.getSprint().getId().equals(sprint.getId()))
+                                        .collect(Collectors.toList());
+
+                        return BacklogResponse.SprintDto.builder()
+                                        .id(sprint.getId())
+                                        .name(sprint.getName())
+                                        .status(sprint.getStatus().toString())
+                                        .startDate(sprint.getStartDate() != null ? sprint.getStartDate().toString()
+                                                        : "")
+                                        .endDate(sprint.getEndDate() != null ? sprint.getEndDate().toString() : "")
+                                        .totalIssues(tasksInSprint.size())
+                                        .tasks(mapTasksToDtos(tasksInSprint, project.getCode())) // ✅ Gọi hàm con để map
+                                        .build();
+                }).collect(Collectors.toList());
+
+                // 3. NHÓM 2: Xử lý Backlog (Task chưa vào Sprint)
+                List<Task> backlogTasksRaw = allTasks.stream()
+                                .filter(t -> t.getSprint() == null) // Quan trọng: Sprint ID là null
+                                .collect(Collectors.toList());
+
+                // 4. Trả về kết quả tổng hợp
+                return BacklogResponse.builder()
+                                .projectId(project.getId())
+                                .projectName(project.getName())
+                                .sprints(sprintDtos)
+                                .backlogTasks(mapTasksToDtos(backlogTasksRaw, project.getCode())) // ✅ Gọi hàm con để
+                                                                                                  // map
+                                .build();
+        }
+
+        /**
+         * HÀM PHỤ (HELPER METHOD)
+         * Nhiệm vụ: Chuyển đổi List<Task> Entity -> List<TaskDto>
+         * Giúp code chính không bị rối mắt.
+         */
+        private List<BacklogResponse.TaskDto> mapTasksToDtos(List<Task> tasks, String projectCode) {
+                return tasks.stream()
+                                .map(task -> {
+                                        // Logic lấy Avatar Assignee (An toàn với null)
+                                        String avatar = null;
+                                        if (task.getAssignees() != null && !task.getAssignees().isEmpty()) {
+                                                avatar = task.getAssignees().get(0).getUser().getAvatarUrl();
+                                        }
+
+                                        // Logic tạo Key hiển thị (VD: "SCRUM-10")
+                                        String taskKey = projectCode + "-" + task.getTaskIndex();
+
+                                        return BacklogResponse.TaskDto.builder()
+                                                        .id(task.getId())
+                                                        .key(taskKey)
+                                                        .title(task.getTitle())
+                                                        .priority(task.getPriority().name())
+                                                        .storyPoints(task.getStoryPoints())
+                                                        .issueTypeIcon(task.getIssueType().getIconUrl())
+                                                        .statusName(task.getStatus().getName())
+                                                        .statusColor(task.getStatus().getColorCode())
+                                                        .assigneeAvatar(avatar)
+                                                        .build();
+                                })
+                                // Sắp xếp: Task mới nhất (ID lớn nhất) lên đầu
+                                .sorted(Comparator.comparing(BacklogResponse.TaskDto::getId).reversed())
+                                .collect(Collectors.toList());
         }
 }
