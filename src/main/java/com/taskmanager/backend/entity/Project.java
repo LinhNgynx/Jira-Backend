@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import com.taskmanager.backend.enums.ProjectStatus; // Nhớ tạo Enum này
+import java.util.List; // Nhớ import List
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -42,6 +43,9 @@ public class Project {
     @ManyToOne(fetch = FetchType.LAZY, optional = false) 
     @JoinColumn(name = "workflow_id", nullable = false)
     private Workflow workflow;
+
+    @OneToMany(mappedBy = "project", fetch = FetchType.LAZY)
+    private List<ProjectMember> projectMembers;
 
     // -----------------------------------
 

@@ -10,6 +10,8 @@ public class CreateProjectRequest {
     @NotBlank(message = "Tên dự án không được để trống")
     private String name;
 
+    private Integer workflowId;
+
     @NotBlank(message = "Mã dự án không được để trống")
     @Size(min = 2, max = 10, message = "Mã dự án từ 2-10 ký tự")
     @Pattern(regexp = "^[A-Z0-9]+$", message = "Mã dự án chỉ chứa chữ hoa và số (VD: JIRA, PRJ1)")
