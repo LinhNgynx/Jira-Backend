@@ -2,17 +2,21 @@ package com.taskmanager.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction; // ✅ IMPORT MỚI
+import com.taskmanager.backend.enums.UserStatus;
 import java.util.List;
 
 @Entity
 @Table(name = "users")
+@SQLDelete(sql = "UPDATE users SET is_deleted = true WHERE id = ?")
+@SQLRestriction("is_deleted = false") // ✅ THAY THẾ @Where
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User {
+public class User extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
@@ -35,14 +39,9 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    @Column(name = "status", nullable = false)
-    private com.taskmanager.backend.enums.UserStatus status = com.taskmanager.backend.enums.UserStatus.ACTIVE;
+    @Column(nullable = false)
+    private UserStatus status = UserStatus.ACTIVE;
 
-    @org.hibernate.annotations.CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
-
-    // ✅ Quan hệ OneToMany với ProjectMember
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<ProjectMember> projectMembers;
 }

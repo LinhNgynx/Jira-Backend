@@ -5,6 +5,7 @@ import com.taskmanager.backend.entity.*;
 import com.taskmanager.backend.enums.IssueLevel;
 import com.taskmanager.backend.enums.RoleType;
 import com.taskmanager.backend.enums.TaskPriority;
+import com.taskmanager.backend.enums.ActivityAction;
 // ✅ Import custom exceptions
 import com.taskmanager.backend.exception.BusinessException;
 import com.taskmanager.backend.exception.ResourceNotFoundException;
@@ -28,6 +29,7 @@ public class TaskService {
     private final TaskAssigneeRepository assigneeRepo;
     private final ProjectMemberRepository memberRepo;
     private final UserRepository userRepo;
+    private final ActivityLogService logService;
     private final UserUtils userUtils;
 
     @Transactional
@@ -39,11 +41,8 @@ public class TaskService {
                 .orElseThrow(() -> new ResourceNotFoundException("Dự án không tồn tại (ID: " + request.getProjectId() + ")"));
 
         // 2. CHECK QUYỀN (Nếu vi phạm -> 400 Bad Request)
-        ProjectMember currentMember = project.getProjectMembers().stream()
-                .filter(m -> m.getUser().getId().equals(currentUser.getId()))
-                .findFirst()
+       ProjectMember currentMember = memberRepo.findByProjectIdAndUserId(project.getId(), currentUser.getId())
                 .orElseThrow(() -> new BusinessException("Bạn không phải thành viên dự án này!"));
-
         if (currentMember.getRole().getName() == RoleType.VIEWER) {
             throw new BusinessException("Bạn chỉ có quyền Xem (Viewer), không được phép tạo Task!");
         }
@@ -79,8 +78,8 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException("Lỗi cấu hình Workflow: Dự án chưa có bước khởi đầu (Step 1/To Do)"));
 
         // 7. Tự động tính Task Index
-        Integer nextIndex = taskRepo.getMaxTaskIndex(project.getId()) + 1;
-
+        Integer maxIndex = taskRepo.getMaxTaskIndex(project.getId());
+        Integer nextIndex = (maxIndex == null ? 0 : maxIndex) + 1;
         // 8. Build & Save Task
         Task task = Task.builder()
                 .title(request.getTitle())
@@ -116,7 +115,8 @@ public class TaskService {
                 assigneeRepo.save(assignment);
             }
         }
-
+        String detail = "Task created with key: " + project.getCode() + "-" + nextIndex;
+        logService.log(currentUser, savedTask, ActivityAction.CREATED, null, detail);
         return savedTask;
     }
 
