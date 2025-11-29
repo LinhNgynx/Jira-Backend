@@ -3,13 +3,13 @@ package com.taskmanager.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
-import com.taskmanager.backend.enums.NotificationType; // Nhớ tạo Enum này
+import com.taskmanager.backend.enums.NotificationType;
 
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "notifications")
-@Getter // ✅ 1. Vẫn quy tắc cũ: Bỏ @Data
+@Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
@@ -17,37 +17,40 @@ import java.time.LocalDateTime;
 public class Notification {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id; // ✅ 2. Dùng LONG vì bảng này sẽ rất nhiều dòng (Integer dễ bị tràn)
+    private Integer id;
 
-    // Người nhận (To whom?)
+    // Người nhận (Bắt buộc)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
-    private User recipient; 
+    private User recipient;
 
-    // ✅ 3. Người gửi/tác động (Who did it?)
-    // Để hiển thị avatar người đã comment/assign
+    // Người gửi (Có thể null nếu là thông báo hệ thống)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sender_id") 
+    @JoinColumn(name = "sender_id")
     private User sender;
 
-    // Link đến Task liên quan
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "task_id") 
-    private Task task;
+    // ❌ BỎ CÁI NÀY: private Task task; 
+    // Vì thông báo có thể là về ProjectInvitation, không chỉ Task.
 
-    // ✅ 4. Loại thông báo (Để Frontend hiện icon khác nhau)
+    // ✅ THAY BẰNG CÁI NÀY:
+    @Column(name = "reference_id")
+    private Long referenceId; 
+    // Logic: 
+    // - Nếu Type = TASK_ASSIGNED -> referenceId là taskId
+    // - Nếu Type = PROJECT_INVITE -> referenceId là invitationId
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private NotificationType type;
 
     @Column(columnDefinition = "TEXT")
-    private String content; // Có thể null nếu dùng client-side rendering dựa trên Type
+    private String content;
 
     @Builder.Default
     @Column(name = "is_read")
-    private boolean isRead = false; // Dùng primitive boolean cho nhẹ
+    private boolean isRead = false;
 
-    @CreationTimestamp // ✅ 5. Hibernate tự lo
+    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 }
