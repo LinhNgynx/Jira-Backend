@@ -7,7 +7,7 @@ public enum NotificationType {
     TASK_STATUS_CHANGED,    // Task thay đổi trạng thái
     MENTIONED,              // Được tag tên @
     DUE_DATE_SOON,          // Sắp hết hạn
-
+    TASK_UPDATE,
     // Nhóm Project (MỚI THÊM)
     PROJECT_INVITE,         // <--- QUAN TRỌNG: Dùng cho InvitationService
     PROJECT_REMOVED         // (Optional) Khi bị kick khỏi dự án

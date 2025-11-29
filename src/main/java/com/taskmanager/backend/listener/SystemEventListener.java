@@ -22,6 +22,9 @@ public class SystemEventListener {
     @Async
     @EventListener
     public void handleActivityLog(SystemEvent event) {
+        if (event.getLogAction() == null) {
+            return;
+        }
         try {
             if (event.getSubject() instanceof Task task) {
                 // 1. Tạo Entity để lưu xuống DB (Cho user xem)
@@ -32,12 +35,12 @@ public class SystemEventListener {
                         .newValue(event.getLogDetail()) // Map detail vào newValue
                         .oldValue(null) // Hiện tại event chưa có oldValue, để null hoặc mở rộng Event sau
                         .build();
-                
+
                 logRepo.save(activityLog); // <--- LƯU DB LÀ DÒNG NÀY
 
                 // 2. In ra màn hình đen (Cho Dev xem để biết là đã lưu thành công)
-                log.info("✅ [Async Thread] Đã lưu ActivityLog ID: {} - User: {}", 
-                         activityLog.getId(), event.getActor().getEmail());
+                log.info("✅ [Async Thread] Đã lưu ActivityLog ID: {} - User: {}",
+                        activityLog.getId(), event.getActor().getEmail());
             }
         } catch (Exception e) {
             // Quan trọng: Nếu lưu DB lỗi, nó sẽ in lỗi ra đây để bạn sửa
@@ -47,7 +50,8 @@ public class SystemEventListener {
 
     /**
      * NHIỆM VỤ 2: Gửi Notification Realtime
-     * Logic: Giữ nguyên, gọi sang NotificationService vì logic noti phức tạp (socket + db)
+     * Logic: Giữ nguyên, gọi sang NotificationService vì logic noti phức tạp
+     * (socket + db)
      */
     @Async
     @EventListener
@@ -60,7 +64,8 @@ public class SystemEventListener {
         try {
             // Lấy referenceId tùy theo loại đối tượng
             Long refId = null;
-            if (event.getSubject() instanceof Task t) refId = t.getId().longValue();
+            if (event.getSubject() instanceof Task t)
+                refId = t.getId().longValue();
             // if (event.getSubject() instanceof ProjectInvitation p) refId = p.getId();
 
             notificationService.createAndSendNotification(
@@ -68,8 +73,7 @@ public class SystemEventListener {
                     event.getRecipient(),
                     event.getNotiType(),
                     refId,
-                    event.getNotiMessage()
-            );
+                    event.getNotiMessage());
         } catch (Exception e) {
             log.error("Failed to send notification", e);
         }

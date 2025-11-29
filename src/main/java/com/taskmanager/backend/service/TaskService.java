@@ -1,191 +1,190 @@
 package com.taskmanager.backend.service;
 
 import com.taskmanager.backend.dto.CreateTaskRequest;
+import com.taskmanager.backend.dto.UpdateTaskRequest;
 import com.taskmanager.backend.entity.*;
-import com.taskmanager.backend.enums.ActivityAction;
-import com.taskmanager.backend.enums.IssueLevel;
-import com.taskmanager.backend.enums.NotificationType;
-import com.taskmanager.backend.enums.RoleType;
 import com.taskmanager.backend.enums.TaskPriority;
-import com.taskmanager.backend.event.SystemEvent; // Import Event
-import com.taskmanager.backend.exception.BusinessException;
 import com.taskmanager.backend.exception.ResourceNotFoundException;
 import com.taskmanager.backend.repository.*;
 import com.taskmanager.backend.utils.UserUtils;
+import com.taskmanager.backend.validator.TaskValidator;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher; // Import Publisher
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class TaskService {
 
+    // --- Repositories ---
     private final TaskRepository taskRepo;
     private final ProjectRepository projectRepo;
     private final IssueTypeRepository issueTypeRepo;
     private final WorkflowStepRepository stepRepo;
     private final SprintRepository sprintRepo;
     private final TaskAssigneeRepository assigneeRepo;
-    private final ProjectMemberRepository memberRepo;
     private final UserRepository userRepo;
+
+    // --- Helpers ---
     private final UserUtils userUtils;
+    private final TaskValidator taskValidator; // Chuyên gia check lỗi
+    private final TaskEventService eventService; // ✅ Chuyên gia bắn tin (Class bạn vừa tách)
 
-    // 🔥 Thay ActivityLogService bằng EventPublisher
-    private final ApplicationEventPublisher eventPublisher;
-
+    // =========================================================================
+    // 1. TẠO TASK MỚI
+    // =========================================================================
     @Transactional
     public Task createTask(CreateTaskRequest request) {
         User currentUser = userUtils.getCurrentUser();
 
-        // 1. Tìm Project
+        // 1. Validate dữ liệu & Quyền hạn (Dùng Validator cho gọn)
         Project project = projectRepo.findById(request.getProjectId())
-                .orElseThrow(() -> new ResourceNotFoundException("Dự án không tồn tại (ID: " + request.getProjectId() + ")"));
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
-        // 2. CHECK QUYỀN
-        ProjectMember currentMember = memberRepo.findByProjectIdAndUserId(project.getId(), currentUser.getId())
-                .orElseThrow(() -> new BusinessException("Bạn không phải thành viên dự án này!"));
-        
-        if (currentMember.getRole().getName() == RoleType.VIEWER) {
-            throw new BusinessException("Bạn chỉ có quyền Xem (Viewer), không được phép tạo Task!");
-        }
-
-        // 3. Tìm Issue Type
         IssueType issueType = issueTypeRepo.findById(request.getIssueTypeId())
-                .orElseThrow(() -> new ResourceNotFoundException("Loại Task (Issue Type) không tồn tại"));
+                .orElseThrow(() -> new ResourceNotFoundException("IssueType not found"));
 
-        // 4. Xử lý Cha Con & Validate
+        taskValidator.validateWritePermission(project.getId(), currentUser.getId());
+
         Task parentTask = null;
         if (request.getParentTaskId() != null) {
             parentTask = taskRepo.findById(request.getParentTaskId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Task cha (Parent Task) không tồn tại"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Parent Task not found"));
         }
-        
-        validateTaskHierarchy(issueType, parentTask);
+        taskValidator.validateHierarchy(issueType, parentTask);
 
-        // 5. Tìm Sprint
         Sprint sprint = null;
         if (request.getSprintId() != null) {
             sprint = sprintRepo.findById(request.getSprintId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Sprint không tồn tại"));
-            
-            if (!sprint.getProject().getId().equals(project.getId())) {
-                throw new BusinessException("Sprint được chọn không thuộc dự án này!");
-            }
+                    .orElseThrow(() -> new ResourceNotFoundException("Sprint not found"));
+            taskValidator.validateSprint(sprint, project.getId());
         }
 
-        // 6. Tự động tìm Status khởi đầu
+        // 2. Tính toán Logic tự động (Start Step, Task Index)
         WorkflowStep startStep = stepRepo.findByWorkflowIdAndStepOrder(project.getWorkflow().getId(), 1)
-                .orElseThrow(() -> new BusinessException("Lỗi cấu hình Workflow: Dự án chưa có bước khởi đầu (Step 1/To Do)"));
+                .orElseThrow(() -> new RuntimeException("Workflow error: No start step found"));
 
-        // 7. Tự động tính Task Index
         Integer maxIndex = taskRepo.getMaxTaskIndex(project.getId());
         Integer nextIndex = (maxIndex == null ? 0 : maxIndex) + 1;
 
-        // 8. Build & Save Task
+        // 3. Build & Save Task
         Task task = Task.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .project(project)
                 .issueType(issueType)
-                .status(startStep.getStatus()) 
-                .taskIndex(nextIndex)          
+                .status(startStep.getStatus())
+                .taskIndex(nextIndex)
                 .priority(request.getPriority() != null ? request.getPriority() : TaskPriority.MEDIUM)
                 .storyPoints(request.getStoryPoints())
                 .startDate(request.getStartDate())
                 .dueDate(request.getDueDate())
-                .sprint(sprint)         
-                .parentTask(parentTask) 
+                .sprint(sprint)
+                .parentTask(parentTask)
                 .build();
 
         Task savedTask = taskRepo.save(task);
 
-        // 9. Lưu Assignees và xác định người nhận thông báo
-        List<User> notificationRecipients = new ArrayList<>(); // Danh sách người sẽ nhận Noti
-
+        // 4. Lưu Assignees (Người làm)
         if (request.getAssigneeIds() != null && !request.getAssigneeIds().isEmpty()) {
             List<User> assignees = userRepo.findAllById(request.getAssigneeIds());
-            
             for (User user : assignees) {
-                // Check member
-                if (!memberRepo.existsByProjectIdAndUserId(project.getId(), user.getId())) {
-                    throw new BusinessException("Lỗi: User " + user.getEmail() + " không thuộc dự án này!");
-                }
-
-                TaskAssignee assignment = TaskAssignee.builder()
-                        .task(savedTask)
-                        .user(user)
-                        .build();
-                assigneeRepo.save(assignment);
-                
-                // Thêm vào list nhận thông báo (trừ chính mình ra)
-                if (!user.getId().equals(currentUser.getId())) {
-                    notificationRecipients.add(user);
-                }
+                taskValidator.validateAssignee(project.getId(), user);
+                assigneeRepo.save(TaskAssignee.builder().task(savedTask).user(user).build());
             }
         }
 
-        // 🔥 10. BẮN SỰ KIỆN (EVENT)
-        // Logic: Mỗi người được assign sẽ nhận 1 thông báo riêng
-        String taskKey = project.getCode() + "-" + nextIndex;
-        
-        if (notificationRecipients.isEmpty()) {
-            // Trường hợp 1: Không assign cho ai (hoặc assign cho chính mình)
-            // -> Chỉ bắn Event để ghi Log, không bắn Noti (recipient = null)
-            eventPublisher.publishEvent(new SystemEvent(
-                    this,
-                    currentUser,
-                    savedTask,
-                    ActivityAction.CREATED,
-                    "Created task " + taskKey,
-                    null, null, null // Không gửi Noti
-            ));
-        } else {
-            // Trường hợp 2: Có assign cho người khác
-            // -> Bắn Event cho từng người (để mỗi người nhận được 1 noti riêng)
-            // Lưu ý: Log chỉ cần ghi 1 lần là đủ, nên ta chỉ set Log Action cho người đầu tiên
-            boolean isLogRecorded = false;
-
-            for (User recipient : notificationRecipients) {
-                eventPublisher.publishEvent(new SystemEvent(
-                        this,
-                        currentUser,
-                        savedTask,
-                        isLogRecorded ? null : ActivityAction.CREATED, // Chỉ ghi log lần đầu
-                        isLogRecorded ? null : "Created task " + taskKey,
-                        recipient,
-                        NotificationType.TASK_ASSIGNED,
-                        currentUser.getFullName() + " đã gán bạn vào task: " + savedTask.getTitle()
-                ));
-                isLogRecorded = true;
-            }
-        }
+        // 5. 🔥 GỌI EVENT SERVICE (1 dòng duy nhất)
+        // Service này sẽ tự tìm Assignee trong DB để gửi Noti và ghi Log
+        eventService.publishTaskCreatedEvent(currentUser, savedTask);
 
         return savedTask;
     }
 
-    // --- HÀM PHỤ giữ nguyên ---
-    private void validateTaskHierarchy(IssueType currentType, Task parentTask) {
-        if (currentType.getLevel() == IssueLevel.EPIC) {
-            if (parentTask != null) throw new BusinessException("Lỗi: Epic không được phép có cha!");
-            return;
+    // =========================================================================
+    // 2. CẬP NHẬT TASK
+    // =========================================================================
+    @Transactional
+    public Task updateTask(Integer taskId, UpdateTaskRequest request) {
+        User currentUser = userUtils.getCurrentUser();
+
+        // 1. Tìm Task & Check quyền
+        Task task = taskRepo.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found"));
+
+        taskValidator.validateUpdatePermission(task, currentUser.getId());
+
+        // 2. SO SÁNH & UPDATE (Change Detection)
+        boolean isChanged = false;
+        StringBuilder changesSummary = new StringBuilder();
+
+        // --- Check Title ---
+        if (request.getTitle() != null && !request.getTitle().equals(task.getTitle())) {
+            // 🔥 Gọi Event Service để ghi log chi tiết
+            eventService.logFieldChange(currentUser, task, "Title", task.getTitle(), request.getTitle());
+
+            task.setTitle(request.getTitle());
+            isChanged = true;
+            changesSummary.append("tiêu đề, ");
         }
-        if (currentType.getLevel() == IssueLevel.SUBTASK) {
-            if (parentTask == null) throw new BusinessException("Lỗi: Subtask bắt buộc phải có cha!");
-            if (parentTask.getIssueType().getLevel() != IssueLevel.STANDARD) {
-                throw new BusinessException("Lỗi: Cha của Subtask phải là Story, Task hoặc Bug!");
+
+        // --- Check Description ---
+        if (request.getDescription() != null && !request.getDescription().equals(task.getDescription())) {
+            eventService.logFieldChange(currentUser, task, "Description", "Old Value", "New Value");
+            task.setDescription(request.getDescription());
+            isChanged = true;
+            changesSummary.append("mô tả, ");
+        }
+
+        // --- Check Priority ---
+        if (request.getPriority() != null && request.getPriority() != task.getPriority()) {
+            eventService.logFieldChange(currentUser, task, "Priority", task.getPriority().name(),
+                    request.getPriority().name());
+            task.setPriority(request.getPriority());
+            isChanged = true;
+            changesSummary.append("độ ưu tiên, ");
+        }
+
+        // --- Check Story Points ---
+        if (request.getStoryPoints() != null && !request.getStoryPoints().equals(task.getStoryPoints())) {
+            String oldVal = String.valueOf(task.getStoryPoints());
+            String newVal = String.valueOf(request.getStoryPoints());
+            eventService.logFieldChange(currentUser, task, "Story Points", oldVal, newVal);
+
+            task.setStoryPoints(request.getStoryPoints());
+            isChanged = true;
+            changesSummary.append("điểm story, ");
+        }
+
+        // --- Check Due Date ---
+        if (request.getDueDate() != null && !request.getDueDate().equals(task.getDueDate())) {
+            String oldVal = task.getDueDate() == null ? "None" : task.getDueDate().toString();
+            eventService.logFieldChange(currentUser, task, "Due Date", oldVal, request.getDueDate().toString());
+
+            task.setDueDate(request.getDueDate());
+            isChanged = true;
+            changesSummary.append("ngày hết hạn, ");
+        }
+
+        // 3. LƯU & BẮN NOTI TỔNG HỢP
+        if (isChanged) {
+            Task updatedTask = taskRepo.save(task);
+            if (updatedTask.getAssignees() != null) {
+                updatedTask.getAssignees().size(); // Chỉ cần truy cập để ép tải
             }
-            return;
-        }
-        if (currentType.getLevel() == IssueLevel.STANDARD) {
-            if (parentTask != null) {
-                if (parentTask.getIssueType().getLevel() != IssueLevel.EPIC) {
-                    throw new BusinessException("Lỗi: Task thường chỉ được phép thuộc về Epic (hoặc không có cha)!");
-                }
+            String whatChanged = changesSummary.toString();
+            if (whatChanged.endsWith(", ")) {
+                whatChanged = whatChanged.substring(0, whatChanged.length() - 2);
             }
+
+            // 🔥 Gọi Event Service để gửi Noti
+            eventService.sendUpdateNotification(currentUser, updatedTask, whatChanged);
+
+            return updatedTask;
         }
+
+        return task;
     }
 }

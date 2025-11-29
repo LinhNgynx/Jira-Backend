@@ -5,6 +5,8 @@ public enum ActivityAction {
     UPDATE_TITLE,
     COMMENT_ADDED,
     TASK_ASSIGNED,
+    UPDATE_TASK,
+    LABEL_ADDED,
     CREATED,
     DELETED,
     OTHER
