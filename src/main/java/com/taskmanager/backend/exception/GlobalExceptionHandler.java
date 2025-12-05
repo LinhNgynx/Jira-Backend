@@ -13,25 +13,26 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 1. Xử lý lỗi KHÔNG TÌM THẤY (404 Not Found) - VD: Sai ID dự án, sai ID Task
+    // 1. Xử lý lỗi KHÔNG TÌM THẤY (404 Not Found)
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<?> handleResourceNotFound(ResourceNotFoundException ex) {
-        Map<String, String> error = new HashMap<>();
-        error.put("error", "Not Found");
-        error.put("message", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
     }
 
-    // 2. Xử lý lỗi LOGIC NGHIỆP VỤ (400 Bad Request) - VD: Trùng tên, sai quy tắc cha con
-    @ExceptionHandler(BusinessException.class) // Hoặc giữ RuntimeException nếu lười sửa Service
+    // 2. Xử lý lỗi LOGIC NGHIỆP VỤ (400 Bad Request)
+    @ExceptionHandler(BusinessException.class)
     public ResponseEntity<?> handleBusinessException(BusinessException ex) {
-        Map<String, String> error = new HashMap<>();
-        error.put("error", "Bad Request");
-        error.put("message", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
     }
 
-    // 3. Giữ nguyên cái Validation của bạn (Rất tốt)
+    // 🔥 3. [MỚI] Xử lý lỗi KHÔNG CÓ QUYỀN (403 Forbidden)
+    // Đây là cái cần thiết cho SprintValidator (ActionNotAllowedException)
+    @ExceptionHandler(ActionNotAllowedException.class)
+    public ResponseEntity<?> handleActionNotAllowed(ActionNotAllowedException ex) {
+        return buildErrorResponse(HttpStatus.FORBIDDEN, "Action Not Allowed", ex.getMessage());
+    }
+
+    // 4. Xử lý lỗi VALIDATION (400 Bad Request - Form không hợp lệ)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleValidationException(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
@@ -41,23 +42,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errors);
     }
 
-    // 4. Giữ nguyên cái Auth của bạn (Rất tốt)
+    // 5. Xử lý lỗi AUTH (401 Unauthorized - Sai pass/token)
     @ExceptionHandler({BadCredentialsException.class})
     public ResponseEntity<?> handleAuthenticationException(Exception ex) {
-        Map<String, String> error = new HashMap<>();
-        error.put("error", "Unauthorized");
-        error.put("message", "Email hoặc mật khẩu không chính xác");
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+        return buildErrorResponse(HttpStatus.UNAUTHORIZED, "Unauthorized", "Email hoặc mật khẩu không chính xác");
     }
 
-    // 5. QUAN TRỌNG: Xử lý lỗi hệ thống không mong muốn (500 Internal Server Error)
-    // Cái này hứng tất cả các lỗi còn lại (NullPointer, SQL Error...)
+    // 6. Xử lý lỗi HỆ THỐNG (500 Internal Server Error)
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleGlobalException(Exception ex) {
-        Map<String, String> error = new HashMap<>();
-        error.put("error", "Internal Server Error");
-        error.put("message", "Đã có lỗi xảy ra, vui lòng thử lại sau."); 
-        // ex.printStackTrace(); // Log ra console để dev sửa, đừng trả về cho user
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        // Nên log lỗi ra console để dev biết đường sửa
+        ex.printStackTrace(); 
+        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "Đã có lỗi xảy ra, vui lòng thử lại sau.");
+    }
+
+    // --- HELPER METHOD CHO GỌN CODE ---
+    private ResponseEntity<Map<String, String>> buildErrorResponse(HttpStatus status, String error, String message) {
+        Map<String, String> body = new HashMap<>();
+        body.put("error", error);
+        body.put("message", message);
+        // body.put("timestamp", LocalDateTime.now().toString()); // Có thể thêm nếu thích
+        return ResponseEntity.status(status).body(body);
     }
 }

@@ -182,7 +182,7 @@ public class ProjectService {
                 Project project = projectRepo.findById(projectId)
                                 .orElseThrow(() -> new RuntimeException("Dự án không tồn tại"));
 
-                List<Sprint> sprints = sprintRepo.findActiveAndPlannedSprints(projectId);
+                List<Sprint> sprints = sprintRepo.findActiveAndUpcomingSprints(projectId);
 
                 // Lưu ý: taskRepo phải dùng câu @Query JOIN FETCH để tối ưu hiệu năng (tránh
                 // lỗi N+1)
