@@ -6,14 +6,14 @@ import com.taskmanager.backend.event.SystemEvent;
 import com.taskmanager.backend.repository.ActivityLogRepository;
 import com.taskmanager.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j; // <--- Cái này sinh ra biến 'log'
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j // Tự động tạo: private static final Logger log = LoggerFactory.getLogger(...)
+@Slf4j
 public class SystemEventListener {
 
     private final ActivityLogRepository logRepo;
@@ -22,29 +22,31 @@ public class SystemEventListener {
     @Async
     @EventListener
     public void handleActivityLog(SystemEvent event) {
-        if (event.getLogAction() == null) {
+        if (event.getLogAction() == null)
             return;
-        }
+
         try {
             if (event.getSubject() instanceof Task task) {
-                // 1. Tạo Entity để lưu xuống DB (Cho user xem)
                 ActivityLog activityLog = ActivityLog.builder()
                         .user(event.getActor())
                         .task(task)
                         .action(event.getLogAction())
-                        .newValue(event.getLogDetail()) // Map detail vào newValue
-                        .oldValue(null) // Hiện tại event chưa có oldValue, để null hoặc mở rộng Event sau
+
+                        // ✅ MAP DỮ LIỆU CHUẨN:
+                        .description(event.getLogDetail()) // Câu văn mô tả
+                        .oldValue(event.getOldValue()) // Giá trị cũ
+                        .newValue(event.getNewValue()) // Giá trị mới
+
                         .build();
 
-                logRepo.save(activityLog); // <--- LƯU DB LÀ DÒNG NÀY
+                logRepo.save(activityLog);
 
-                // 2. In ra màn hình đen (Cho Dev xem để biết là đã lưu thành công)
-                log.info("✅ [Async Thread] Đã lưu ActivityLog ID: {} - User: {}",
-                        activityLog.getId(), event.getActor().getEmail());
+                // Log ra console kiểm tra
+                log.info("✅ Log Saved: [{}] Old='{}' -> New='{}'",
+                        event.getLogDetail(), event.getOldValue(), event.getNewValue());
             }
         } catch (Exception e) {
-            // Quan trọng: Nếu lưu DB lỗi, nó sẽ in lỗi ra đây để bạn sửa
-            log.error("❌ Lỗi khi lưu ActivityLog: ", e);
+            log.error("❌ Error saving log", e);
         }
     }
 

@@ -53,7 +53,7 @@ public class TaskEventService {
         }
 
         // 2. Ghi Log (Log chỉ được ghi 1 lần)
-        publishLog(actor, task, ActivityAction.CREATED, "Created task " + taskKey);
+        publishLog(actor, task, ActivityAction.CREATED, "Created task " + taskKey, null, null); 
 
         // LƯU Ý: Không cần logic isLogRecorded phức tạp nữa vì Log và Noti đã tách hàm
     }
@@ -63,8 +63,8 @@ public class TaskEventService {
      * Được gọi cho từng trường thay đổi (Title, Priority).
      */
     public void logFieldChange(User actor, Task task, String field, String oldVal, String newVal) {
-        publishLog(actor, task, ActivityAction.UPDATE_TASK, 
-                   "Updated " + field + ": " + oldVal + " -> " + newVal);
+        String detail = "Updated " + field; // Detail ngắn gọn hơn
+        publishLog(actor, task, ActivityAction.UPDATE_TASK, detail, oldVal, newVal);
     }
 
     /**
@@ -84,6 +84,7 @@ public class TaskEventService {
             }
         }
     }
+    
 
     // =========================================================================
     // PRIVATE HELPER (Wrapper cho Event Publishing)
@@ -92,10 +93,11 @@ public class TaskEventService {
     /**
      * Helper 1: Wrapper cho việc GHI LOG (Chỉ set Action)
      */
-    private void publishLog(User actor, Object subject, ActivityAction action, String logDetail) {
-        // action không null -> bắn Event chỉ ghi Log
+    private void publishLog(User actor, Object subject, ActivityAction action, String logDetail, String oldVal, String newVal) {
         eventPublisher.publishEvent(new SystemEvent(
-            this, actor, subject, action, logDetail, null, null, null 
+            this, actor, subject, action, logDetail, 
+            oldVal, newVal, // Truyền vào Event
+            null, null, null 
         ));
     }
     
@@ -103,10 +105,9 @@ public class TaskEventService {
      * Helper 2: Wrapper cho việc GỬI NOTIFICATION (Chỉ set Recipient/Type/Msg)
      */
     private void publishNotification(User actor, Task task, User recipient, NotificationType type, String message) {
-        // recipient không null -> bắn Event chỉ gửi Noti
         eventPublisher.publishEvent(new SystemEvent(
             this, actor, task, 
-            null, null, // Không ghi Log
+            null, null, null, null, // Log null
             recipient, type, message
         ));
     }
