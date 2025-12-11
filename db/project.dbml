@@ -1,246 +1,343 @@
-// Use DBML to define your database structure
-// Docs: https://dbml.dbdiagram.io/docs
+// ==========================================
+// 1. USER MANAGEMENT
+// ==========================================
 
-// ===========================================
-// 0. LOOKUP & CONFIGURATION TABLES
-// ===========================================
-
-// 0A. PROJECT ROLES
-Table project_roles {
-  id integer [pk]
-  name varchar [unique, not null] // PO, SM, DEVELOPER, QA
-  description text
-}
-
-// 0B. ISSUE TYPES
-Table issue_types {
-  id integer [pk]
-  name varchar [unique, not null] // Epic, Story, Task, Bug, Sub-task
-  icon_url varchar
-  is_subtask boolean [default: false]
-}
-
-// 0C. WORKFLOW STATUSES (Kho trạng thái)
-Table workflow_statuses {
-  id integer [pk]
-  name varchar [not null] // To Do, In Progress, Review, Done
-  status_category varchar // TO_DO, IN_PROGRESS, DONE
-  color_code varchar
-}
-
-// ===========================================
-// 1. WORKFLOW ENGINE
-// ===========================================
-
-// 1A. WORKFLOWS
-Table workflows {
-  id integer [pk]
-  name varchar [unique, not null] // "Software Dev", "Simple Task"
-  description text
-}
-
-// 1B. WORKFLOW STEPS (Định nghĩa CỘT trên Board) -> ĐÃ THÊM LẠI
-Table workflow_steps {
-  id integer [pk]
-  workflow_id integer [not null]
-  status_id integer [not null]
-  step_order integer [not null] // 1, 2, 3...
-
-  indexes {
-    (workflow_id, status_id) [unique]
-  }
-}
-
-// 1C. STATUS TRANSITIONS (Luật di chuyển)
-Table status_transitions {
-  id integer [pk]
-  workflow_id integer [not null]
-  from_status_id integer [not null]
-  to_status_id integer [not null]
-  
-  indexes {
-    (workflow_id, from_status_id, to_status_id) [unique]
-  }
-}
-
-// ===========================================
-// 2. CORE ENTITIES
-// ===========================================
-
-// 2A. USERS
 Table users {
-  id integer [pk]
+  id integer [pk, increment]
   email varchar [unique, not null]
   password_hash varchar [not null]
   full_name varchar
   avatar_url varchar
-  is_superuser boolean [default: false] // Admin hệ thống
-  status varchar [default: 'ACTIVE']
-  created_at timestamp
+  is_superuser boolean [default: false]
+  status user_status [not null, default: 'ACTIVE']
+  
+  // BaseEntity Fields
+  is_deleted boolean [default: false, note: 'Soft Delete']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
 }
 
-// 2B. PROJECTS
+Enum user_status {
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
+// ==========================================
+// 2. PROJECT & ROLES
+// ==========================================
+
 Table projects {
-  id integer [pk]
+  id integer [pk, increment]
   name varchar [not null]
-  code varchar [unique]
+  code varchar(10) [unique, not null]
   description text
   owner_id integer [not null]
   workflow_id integer [not null]
   
   start_date date
   end_date date
-  status varchar 
-  created_at timestamp
+  status project_status [not null]
+
+  // BaseEntity Fields
+  is_deleted boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
 }
 
-// 2C. SPRINTS
-Table sprints {
-  id integer [pk]
+Enum project_status {
+  PLANNING
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+Table project_members {
+  id integer [pk, increment]
   project_id integer [not null]
-  name varchar
+  user_id integer [not null]
+  project_role_id integer [not null]
+  joined_at timestamp [default: `now()`]
+
+  indexes {
+    (project_id, user_id) [unique]
+  }
+}
+
+Table project_roles {
+  id integer [pk, increment]
+  name varchar [not null, note: 'Enum: OWNER, ADMIN, MEMBER, VIEWER'] 
+  description text
+}
+
+Table project_invitations {
+  id long [pk, increment]
+  project_id integer [not null]
+  inviter_id integer [not null]
+  invitee_email varchar [not null]
+  invitee_user_id integer [note: 'Null if user not registered']
+  role_id integer [not null]
+  token varchar [unique, not null]
+  status invitation_status [not null]
+  expired_at timestamp
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
+}
+
+Enum invitation_status {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+// ==========================================
+// 3. WORKFLOW & ISSUE TYPES
+// ==========================================
+
+Table workflows {
+  id integer [pk, increment]
+  name varchar [unique, not null]
+  description varchar
+}
+
+Table workflow_statuses {
+  id integer [pk, increment]
+  name varchar [not null]
+  status_category status_category [not null]
+  color_code varchar
+}
+
+Enum status_category {
+  TO_DO
+  IN_PROGRESS
+  DONE
+}
+
+Table workflow_steps {
+  id integer [pk, increment]
+  workflow_id integer [not null]
+  status_id integer [not null]
+  step_order integer [not null]
+  
+  indexes {
+    (workflow_id, status_id) [unique]
+  }
+}
+
+Table status_transitions {
+  id integer [pk, increment]
+  workflow_id integer [not null]
+  from_status_id integer [not null]
+  to_status_id integer [not null]
+}
+
+Table issue_types {
+  id integer [pk, increment]
+  name varchar [unique, not null]
+  icon_url varchar
+  hierarchy_level issue_level [not null]
+}
+
+Enum issue_level {
+  EPIC
+  STORY
+  TASK
+  SUBTASK
+}
+
+// ==========================================
+// 4. TASK & SPRINT
+// ==========================================
+
+Table sprints {
+  id integer [pk, increment]
+  name varchar [not null]
+  goal text
+  project_id integer [not null]
   start_date date
   end_date date
-  status varchar // UPCOMING, ACTIVE, CLOSED
-  created_at timestamp
+  duration sprint_duration
+  status sprint_status [not null]
+
+  // BaseEntity Fields
+  is_deleted boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
 }
 
-// 2D. TASKS
+Enum sprint_status {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
+Enum sprint_duration {
+  ONE_WEEK
+  TWO_WEEKS
+  FOUR_WEEKS
+}
+
 Table tasks {
-  id integer [pk]
-  project_id integer [not null]
-  issue_type_id integer [not null]
-  
-  parent_task_id integer // Self-reference
-  sprint_id integer // Nullable
-  
+  id integer [pk, increment]
+  task_index integer [not null]
   title varchar [not null]
   description text
-  status_id integer [not null] // Trạng thái động
-  priority varchar // HIGH, MEDIUM, LOW
+  priority task_priority
   story_points integer
+  
+  project_id integer [not null]
+  issue_type_id integer [not null]
+  status_id integer [not null]
+  sprint_id integer
+  parent_task_id integer [note: 'Self Reference for Subtasks']
   
   start_date date
   due_date date
   completed_at timestamp
-  created_at timestamp
+
+  // BaseEntity Fields
+  is_deleted boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
 }
 
-// ===========================================
-// 3. JOIN TABLES
-// ===========================================
+Enum task_priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
 
-// 3A. TASK ASSIGNEES
 Table task_assignees {
+  id integer [pk, increment]
   task_id integer [not null]
   user_id integer [not null]
-  assigned_at timestamp
-
+  assigned_at timestamp [default: `now()`]
+  
   indexes {
-    (task_id, user_id) [pk]
+    (task_id, user_id) [unique]
   }
 }
 
-// 3B. LABELS
 Table labels {
-  id integer [pk]
+  id integer [pk, increment]
   name varchar [unique, not null]
   color varchar
 }
 
-// 3C. TASK LABELS
 Table task_labels {
+  id integer [pk, increment]
   task_id integer [not null]
   label_id integer [not null]
-
+  
   indexes {
-    (task_id, label_id) [pk]
+    (task_id, label_id) [unique]
   }
 }
 
-// 3D. PROJECT MEMBERS
-Table project_members {
-  project_id integer [not null]
-  user_id integer [not null]
-  project_role_id integer [not null]
+// ==========================================
+// 5. ACTIVITY, COMMENTS & NOTIFICATIONS
+// ==========================================
 
-  indexes {
-    (project_id, user_id) [pk]
-  }
-}
-
-// ===========================================
-// 4. TRACKING TABLES
-// ===========================================
-
-// 4A. COMMENTS
 Table comments {
-  id integer [pk]
+  id integer [pk, increment]
+  content text [not null]
   task_id integer [not null]
   user_id integer [not null]
-  content text [not null]
-  created_at timestamp
+
+  // BaseEntity Fields
+  is_deleted boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
 }
 
-// 4B. ACTIVITY LOGS
 Table activity_logs {
-  id integer [pk]
+  id integer [pk, increment]
   task_id integer [not null]
   user_id integer [not null]
-  action varchar [not null]
+  action activity_action [not null]
+  log_description text
   old_value text
   new_value text
-  created_at timestamp
+  created_at timestamp [default: `now()`]
 }
 
-// 4C. NOTIFICATIONS
+Enum activity_action {
+  CREATED
+  UPDATED
+  DELETED
+  COMMENTED
+  STATUS_CHANGED
+}
+
 Table notifications {
-  id integer [pk]
-  user_id integer [not null]
-  task_id integer
-  content text [not null]
-  read boolean [default: false]
-  created_at timestamp
+  id integer [pk, increment]
+  user_id integer [not null, note: 'Recipient']
+  sender_id integer [note: 'Nullable for system msg']
+  reference_id long [note: 'TaskId or InvitationId']
+  type notification_type [not null]
+  content text
+  is_read boolean [default: false]
+  created_at timestamp [default: `now()`]
 }
 
-// ===========================================
-// 5. REFERENCES (Sửa lỗi)
-// ===========================================
+Enum notification_type {
+  TASK_ASSIGNED
+  PROJECT_INVITE
+  MENTION
+  DUE_DATE_SOON
+}
 
-// Workflow System
+// ==========================================
+// RELATIONSHIPS (REFERENCES)
+// ==========================================
+
+// Projects
+Ref: projects.owner_id > users.id
+Ref: projects.workflow_id > workflows.id
+
+// Project Members
+Ref: project_members.project_id > projects.id [delete: cascade]
+Ref: project_members.user_id > users.id
+Ref: project_members.project_role_id > project_roles.id
+
+// Invitations
+Ref: project_invitations.project_id > projects.id [delete: cascade]
+Ref: project_invitations.inviter_id > users.id
+Ref: project_invitations.invitee_user_id > users.id
+Ref: project_invitations.role_id > project_roles.id
+
+// Workflow
 Ref: workflow_steps.workflow_id > workflows.id
 Ref: workflow_steps.status_id > workflow_statuses.id
 Ref: status_transitions.workflow_id > workflows.id
 Ref: status_transitions.from_status_id > workflow_statuses.id
 Ref: status_transitions.to_status_id > workflow_statuses.id
 
-// Links
-Ref: project_members.project_role_id > project_roles.id
-Ref: tasks.issue_type_id > issue_types.id
-Ref: projects.workflow_id > workflows.id
-Ref: tasks.status_id > workflow_statuses.id
-
-// Core
-Ref: projects.owner_id > users.id
-Ref: tasks.project_id > projects.id
-Ref: tasks.parent_task_id > tasks.id
-Ref: tasks.sprint_id > sprints.id
+// Sprints
 Ref: sprints.project_id > projects.id
 
-// Joins
+// Tasks
+Ref: tasks.project_id > projects.id
+Ref: tasks.issue_type_id > issue_types.id
+Ref: tasks.status_id > workflow_statuses.id
+Ref: tasks.sprint_id > sprints.id
+Ref: tasks.parent_task_id > tasks.id [note: 'Cha-Con relationship']
+
+// Task Details
 Ref: task_assignees.task_id > tasks.id
 Ref: task_assignees.user_id > users.id
+
 Ref: task_labels.task_id > tasks.id
 Ref: task_labels.label_id > labels.id
-Ref: project_members.project_id > projects.id
-Ref: project_members.user_id > users.id
 
-// Tracking
 Ref: comments.task_id > tasks.id
 Ref: comments.user_id > users.id
+
 Ref: activity_logs.task_id > tasks.id
 Ref: activity_logs.user_id > users.id
 
-// FIX LỖI: Trỏ vào tasks.id chứ không phải parent_task_id
+// Notifications
 Ref: notifications.user_id > users.id
-Ref: notifications.task_id > tasks.id
+Ref: notifications.sender_id > users.id
